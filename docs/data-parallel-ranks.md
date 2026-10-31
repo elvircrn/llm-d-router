@@ -31,6 +31,12 @@ When the scheduler picks a rank endpoint, the EPP:
 
 Requests to endpoints without ranks keep their headers and their fallbacks without ranks. The EPP drops a rank endpoint from the fallbacks of such a request, because it sets no rank for it.
 
+## Prefill/decode disaggregation
+
+With the coordinator, each phase is a separate request that the EPP schedules on its own, so the prefill call carries the prefill rank and the decode call carries the decode rank.
+
+With the P/D sidecar, one scheduling run picks the decode endpoint (primary profile) and the prefill endpoint. The header carries the decode rank. The disaggregation profile handler sends the prefill rank to the sidecar in `x-llm-d-prefiller-data-parallel-rank`, and the sidecar sets `x-data-parallel-rank` on the prefill request from it. With the P2P offloading connector, the `p2p-source-producer` adds the prefill rank to the prefiller's P2P port in `x-llm-d-kv-cache-prefill-p2p-host-port`. See [Routing headers](disaggregation.md#routing-headers).
+
 ## SGLang
 
 SGLang's `/v1/chat/completions` and `/v1/completions` read the same `x-data-parallel-rank` header (its `routed_dp_rank`). SGLang's native `/generate` reads `x-override-routed-dp-rank` instead, and `sglang.api.v1` gRPC reads `routed_dp_rank` from the request body, so the EPP's `x-data-parallel-rank` header does not reach either route.
@@ -45,12 +51,12 @@ Envoy forwards request headers to a gRPC upstream as metadata, so the same heade
 
 - **Metrics are per pod.** Every rank endpoint of a pod reads the pod's `/metrics` without filtering by rank, so a family with one series per engine gives each rank the same value.
 - **Precise prefix cache.** KV events are keyed by the pod's address, so the ranks of a pod share one index entry.
-- **P/D through the sidecar.** The sidecar sends the decode rank to the prefill worker.
 - **Ranks are per pod.** Each pod's ranks run from 0 to N-1, so a data-parallel group that spans pods is not addressed correctly.
 - **Rank count is configured, not discovered.** The EPP does not check the annotation or the file entries against the model server. A rank count above the server's sends requests to ranks the server rejects; a count below it leaves engines unscheduled.
 - **No failover for rank endpoints.** A request to a rank endpoint has one destination, so when the pod fails the proxy does not retry it on another pod.
 - **Health is per pod.** Pod readiness covers all of a pod's ranks. vLLM's Rust frontend reports one `/health` state for all its engines: it turns `503` after a fatal error in the frontend, and stays `200` while an engine that is still connected stops making progress. The [endpoint health filter](../pkg/epp/framework/plugins/scheduling/filter/endpointhealth/README.md) tracks each rank endpoint on its own, but its poll health does not see a stalled engine, because the frontend serves `/metrics`, and its response health counts only the configured failure statuses (`502` and `503` by default).
 - **One scrape per rank.** Each rank endpoint scrapes its pod's `/metrics` on its own, so a pod with N ranks is scraped N times per interval, each time for every engine's series.
+- **Sidecar version.** A sidecar without prefill-rank support ignores `x-llm-d-prefiller-data-parallel-rank` and sends the decode rank to the prefill worker. Upgrade the sidecars before prefill pods become rank endpoints.
 
 ## Example
 
