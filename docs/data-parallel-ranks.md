@@ -56,6 +56,7 @@ Envoy forwards request headers to a gRPC upstream as metadata, so the same heade
 - **No failover for rank endpoints.** A request to a rank endpoint has one destination, so when the pod fails the proxy does not retry it on another pod.
 - **Health is per pod.** Pod readiness covers all of a pod's ranks. vLLM's Rust frontend reports one `/health` state for all its engines: it turns `503` after a fatal error in the frontend, and stays `200` while an engine that is still connected stops making progress. The [endpoint health filter](../pkg/epp/framework/plugins/scheduling/filter/endpointhealth/README.md) tracks each rank endpoint on its own, but its poll health does not see a stalled engine, because the frontend serves `/metrics`, and its response health counts only the configured failure statuses (`502` and `503` by default).
 - **One scrape per rank.** Each rank endpoint scrapes its pod's `/metrics` on its own, so a pod with N ranks is scraped N times per interval, each time for every engine's series.
+- **Coordinator P/D with SGLang.** The prefill rank would have to reach both request bodies as `disagg_prefill_dp_rank`; the coordinator does not send it.
 - **Sidecar version.** A sidecar without prefill-rank support ignores `x-llm-d-prefiller-data-parallel-rank` and sends the decode rank to the prefill worker. Upgrade the sidecars before prefill pods become rank endpoints.
 
 ## Example
