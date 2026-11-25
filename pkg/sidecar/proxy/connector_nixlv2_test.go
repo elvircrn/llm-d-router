@@ -1505,8 +1505,8 @@ var _ = Describe("NIXL Connector (v2)", func() {
 		Expect(pkv).ToNot(HaveKey("remote_dp_size"))
 		Expect(pkv).ToNot(HaveKey("remote_hosts"))
 
-		Expect(testInfo.prefillHandler.GetCompletionHeaders()[0].Get(requestHeaderDataParallelRank)).To(BeEmpty())
-		Expect(testInfo.decodeHandler.GetCompletionHeaders()[0].Get(requestHeaderDataParallelRank)).To(BeEmpty())
+		Expect(testInfo.prefillHandler.GetCompletionHeaders()[0].Get(routing.DataParallelRankHeader)).To(BeEmpty())
+		Expect(testInfo.decodeHandler.GetCompletionHeaders()[0].Get(routing.DataParallelRankHeader)).To(BeEmpty())
 	})
 
 	// Standard READ-mode parity: DP-rank propagation is a MoRI-IO WRITE-mode
@@ -1522,7 +1522,7 @@ var _ = Describe("NIXL Connector (v2)", func() {
 		Expect(dkv).ToNot(HaveKey(requestFieldRemoteDPRank))
 		Expect(dkv).ToNot(HaveKey(requestFieldRemoteDPRankOverride))
 
-		Expect(testInfo.decodeHandler.GetCompletionHeaders()[0].Get(requestHeaderDataParallelRank)).To(BeEmpty())
+		Expect(testInfo.decodeHandler.GetCompletionHeaders()[0].Get(routing.DataParallelRankHeader)).To(BeEmpty())
 	})
 })
 
@@ -1638,5 +1638,5 @@ func kvParams(h *mock.ChatCompletionHandler, i int) map[string]any { //nolint:un
 func dpRankHeader(h *mock.ChatCompletionHandler, i int) string { //nolint:unparam // i kept for future multi-request tests
 	hdrs := h.GetCompletionHeaders()
 	ExpectWithOffset(1, len(hdrs)).To(BeNumerically(">", i))
-	return hdrs[i].Get(requestHeaderDataParallelRank)
+	return hdrs[i].Get(routing.DataParallelRankHeader)
 }
