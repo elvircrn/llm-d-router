@@ -23,6 +23,7 @@ import (
 	"maps"
 	"net"
 	"slices"
+	"strconv"
 	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -65,6 +66,11 @@ type parameters struct {
 	// reports on the response as x-llm-d-prefiller-host-port. Empty, the default,
 	// reports nothing.
 	PrefillProfile string `json:"prefillProfile"`
+	// ReportPrefillRank reports the selected prefill endpoint's RankIndex in
+	// x-llm-d-prefiller-data-parallel-rank even when RankByHeader is false.
+	// Enable this for multi-port prefill pools (such as SGLang Rust server) when
+	// the coordinator forwards disagg_prefill_dp_rank to decode.
+	ReportPrefillRank bool `json:"reportPrefillRank,omitempty"`
 }
 
 // HeaderProfileHandlerFactory defines the factory function for HeaderProfileHandler.
@@ -77,7 +83,9 @@ func HeaderProfileHandlerFactory(name string, rawParameters *json.Decoder, _ fwk
 	}
 
 	return NewHeaderProfileHandler(params.HeaderName, params.DefaultProfile).
-		WithPrefillProfile(params.PrefillProfile).WithName(name), nil
+		WithPrefillProfile(params.PrefillProfile).
+		WithReportPrefillRank(params.ReportPrefillRank).
+		WithName(name), nil
 }
 
 // NewHeaderProfileHandler trims and defaults both arguments, additionally
@@ -109,10 +117,11 @@ func NewHeaderProfileHandler(headerName, defaultProfile string) *HeaderProfileHa
 // there's nothing to choose or the header is missing/blank; an unrecognized header value
 // is still an error.
 type HeaderProfileHandler struct {
-	typedName      fwkplugin.TypedName
-	headerName     string
-	defaultProfile string
-	prefillProfile string
+	typedName         fwkplugin.TypedName
+	headerName        string
+	defaultProfile    string
+	prefillProfile    string
+	reportPrefillRank bool
 }
 
 // TypedName returns the type and name tuple of this plugin instance.
@@ -130,6 +139,13 @@ func (h *HeaderProfileHandler) WithName(name string) *HeaderProfileHandler {
 // response. An empty or blank name disables the report.
 func (h *HeaderProfileHandler) WithPrefillProfile(name string) *HeaderProfileHandler {
 	h.prefillProfile = strings.TrimSpace(name)
+	return h
+}
+
+// WithReportPrefillRank controls whether ResponseHeader reports RankIndex in
+// x-llm-d-prefiller-data-parallel-rank for multi-port prefill endpoints.
+func (h *HeaderProfileHandler) WithReportPrefillRank(enabled bool) *HeaderProfileHandler {
+	h.reportPrefillRank = enabled
 	return h
 }
 
@@ -242,12 +258,21 @@ func (h *HeaderProfileHandler) ResponseHeader(_ context.Context, request *fwksch
 	if request.SchedulingResult.PrimaryProfileName != h.prefillProfile {
 		return
 	}
-	hostPort, _ := metadata.ServedEndpoint(response.ReqMetadata)
-	if hostPort == "" && targetEndpoint != nil {
-		hostPort = net.JoinHostPort(targetEndpoint.GetIPAddress(), targetEndpoint.GetPort())
+	served, _ := metadata.ServedEndpoint(response.ReqMetadata)
+	hostPort := served
+	var targetHostPort string
+	if targetEndpoint != nil {
+		targetHostPort = net.JoinHostPort(targetEndpoint.GetIPAddress(), targetEndpoint.GetPort())
+		if hostPort == "" {
+			hostPort = targetHostPort
+		}
 	}
 	if hostPort == "" {
 		return
 	}
 	response.Headers[routing.PrefillEndpointHeader] = hostPort
+	if targetEndpoint != nil && (served == "" || served == targetHostPort) &&
+		(targetEndpoint.RankByHeader || h.reportPrefillRank) && targetEndpoint.RankIndex >= 0 {
+		response.Headers[routing.PrefillDataParallelRankHeader] = strconv.Itoa(targetEndpoint.RankIndex)
+	}
 }

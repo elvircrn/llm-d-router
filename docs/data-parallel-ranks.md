@@ -39,9 +39,12 @@ With the P/D sidecar, one scheduling run picks the decode endpoint (primary prof
 
 ## SGLang
 
-SGLang's `/v1/chat/completions` and `/v1/completions` read the same `x-data-parallel-rank` header (its `routed_dp_rank`). SGLang's native `/generate` reads `x-override-routed-dp-rank` instead, and `sglang.api.v1` gRPC reads `routed_dp_rank` from the request body, so the EPP's `x-data-parallel-rank` header does not reach either route.
+SGLang Rust server (`sglang-server`) uses port-per-rank (`targetPorts`), with one HTTP and gRPC listener per DP rank. For disaggregated P/D on multi-rank SGLang pools:
 
-SGLang's `/health` runs a short generation, which can take longer than the 1 second default timeout of a Kubernetes probe. A readiness probe on `/health` needs a longer `timeoutSeconds`; otherwise the pod keeps leaving and rejoining the pool, and requests get `503` with no endpoints.
+- **P/D sidecar:** Set `reportPrefillRank: true` on `disagg-profile-handler`. The EPP sends the selected prefill rank in `x-llm-d-prefiller-data-parallel-rank`, and the sidecar writes `disagg_prefill_dp_rank` on both prefill and decode requests.
+- **Coordinator (`sglang.api.v1` gRPC):** Set `SGLANG_DISAGGREGATION_FORCE_QUERY_PREFILL_DP_RANK=1` on SGLang prefill pods so each rank accepts external routing without `follow_bootstrap_room conflict`. Set `reportPrefillRank: true` on `header-profile-handler` so the coordinator forwards `disagg_prefill_dp_rank` to decode.
+
+SGLang's legacy Python OpenAI `/v1/chat/completions` and `/v1/completions` routes also read `x-data-parallel-rank`. SGLang's `/health` runs a short generation, which can take longer than the 1 second default timeout of a Kubernetes probe. A readiness probe on `/health` needs a longer `timeoutSeconds`; otherwise the pod keeps leaving and rejoining the pool, and requests get `503` with no endpoints.
 
 ## gRPC
 
@@ -56,7 +59,6 @@ Envoy forwards request headers to a gRPC upstream as metadata, so the same heade
 - **No failover for rank endpoints.** A request to a rank endpoint has one destination, so when the pod fails the proxy does not retry it on another pod.
 - **Health is per pod.** Pod readiness covers all of a pod's ranks. vLLM's Rust frontend reports one `/health` state for all its engines: it turns `503` after a fatal error in the frontend, and stays `200` while an engine that is still connected stops making progress. The [endpoint health filter](../pkg/epp/framework/plugins/scheduling/filter/endpointhealth/README.md) tracks each rank endpoint on its own, but its poll health does not see a stalled engine, because the frontend serves `/metrics`, and its response health counts only the configured failure statuses (`502` and `503` by default).
 - **One scrape per rank.** Each rank endpoint scrapes its pod's `/metrics` on its own, so a pod with N ranks is scraped N times per interval, each time for every engine's series.
-- **Coordinator P/D with SGLang.** The prefill rank would have to reach both request bodies as `disagg_prefill_dp_rank`; the coordinator does not send it.
 - **Sidecar version.** A sidecar without prefill-rank support ignores `x-llm-d-prefiller-data-parallel-rank` and sends the decode rank to the prefill worker. Upgrade the sidecars before prefill pods become rank endpoints.
 
 ## Example

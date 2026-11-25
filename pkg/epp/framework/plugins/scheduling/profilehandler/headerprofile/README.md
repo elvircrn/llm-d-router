@@ -65,6 +65,7 @@ and makes one separate scheduling call per profile.
 | `headerName` | string | `x-llm-d-epp-profile` | Request header whose value names the scheduling profile to run. Matched case-insensitively: the EPP lowercases every incoming header name, so this is normalized to lowercase regardless of how it's written here. |
 | `defaultProfile` | string | `decode` | Scheduling profile to run when the header is missing or blank and more than one profile is configured. Matched case-sensitively against `schedulingProfiles` names, like the header value itself. Ignored when only one profile is configured, since that profile always runs. |
 | `prefillProfile` | string | empty | Scheduling profile whose endpoint `ResponseHeader` reports on the response as `x-llm-d-prefiller-host-port`. Matched case-sensitively. Empty reports nothing. Set it only on an EPP that serves the coordinator, since the header names a pod address and reaches whoever receives the response. |
+| `reportPrefillRank` | bool | `false` | Report the selected prefill endpoint `RankIndex` in `x-llm-d-prefiller-data-parallel-rank` even when `RankByHeader` is false. Set to `true` on multi-port prefill pools (such as SGLang Rust server) when the coordinator forwards `disagg_prefill_dp_rank` to decode. Rank-by-header endpoints always report their rank. |
 
 ### Example
 
