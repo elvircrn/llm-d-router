@@ -23,6 +23,7 @@ The plugin config supports:
 
 -   `scheme` (default "http"): The protocol scheme to use for metrics retrieval.
 -   `path` (default "/metrics"): The URL path to use for metrics retrieval.
+-   `port` (int, optional): Override the endpoint inference port for metrics scrapes. On multi-port pools, set this only when one shared port exports per-rank series. Pair it with `filterByRank: true` on `core-metrics-extractor`.
 -   `insecureSkipVerify` (default true): Whether to skip TLS certificate verification when using the "https" scheme.
 -   `caCertPath`: PEM CA bundle to verify the target's server cert. Setting it enables verification regardless of `insecureSkipVerify`.
 -   `clientCertPath` / `clientKeyPath`: client certificate for mTLS. Set both together.
